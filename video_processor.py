@@ -88,6 +88,8 @@ class VideoProcessor:
 
         fps = cap.get(cv2.CAP_PROP_FPS)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         start_frame = int(start_second * fps)
 
         # Set to start frame
@@ -110,9 +112,9 @@ class VideoProcessor:
         # Determine direction
         direction = self._determine_direction(best_track)
 
-        # Select two frames with specified difference
+        # Select two frames (first = closest to center, second = 1 second after)
         frame1_idx, frame2_idx = self._select_frame_pair(
-            best_track, frame_difference
+            best_track, fps, frame_width, frame_height
         )
 
         if frame1_idx is None or frame2_idx is None:
@@ -272,45 +274,63 @@ class VideoProcessor:
 
     def _select_frame_pair(self,
                           track: TrackInfo,
-                          frame_difference: int) -> Tuple[Optional[int], Optional[int]]:
+                          fps: float,
+                          frame_width: int,
+                          frame_height: int) -> Tuple[Optional[int], Optional[int]]:
         """
-        Select two frames with specified frame difference
+        Select first frame where bounding box is closest to center,
+        and second frame 1 second after it
 
         Args:
             track: TrackInfo object
-            frame_difference: Desired frame difference
+            fps: Video frames per second
+            frame_width: Width of video frame
+            frame_height: Height of video frame
 
         Returns:
             Tuple of (frame1_index, frame2_index) or (None, None)
         """
         frame_indices = track.frame_indices
 
+        # Calculate frame difference for 1 second
+        frame_difference = int(fps * 1.0)
+
         if len(frame_indices) < frame_difference + 1:
             return None, None
 
-        # Find pair with best quality (largest average box size)
-        best_score = -1
-        best_idx1, best_idx2 = None, None
+        # Calculate center of frame
+        frame_center_x = frame_width / 2
+        frame_center_y = frame_height / 2
+
+        # Find frame where bbox center is closest to frame center
+        min_distance = float('inf')
+        best_idx = None
 
         for i in range(len(frame_indices) - frame_difference):
-            idx1 = i
-            idx2 = i + frame_difference
+            bbox = track.bbox_history[i]
 
-            if idx2 < len(frame_indices):
-                bbox1 = track.bbox_history[idx1]
-                bbox2 = track.bbox_history[idx2]
+            # Calculate bbox center
+            bbox_center_x = (bbox[0] + bbox[2]) / 2
+            bbox_center_y = (bbox[1] + bbox[3]) / 2
 
-                area1 = (bbox1[2] - bbox1[0]) * (bbox1[3] - bbox1[1])
-                area2 = (bbox2[2] - bbox2[0]) * (bbox2[3] - bbox2[1])
+            # Calculate Euclidean distance to frame center
+            distance = np.sqrt(
+                (bbox_center_x - frame_center_x) ** 2 +
+                (bbox_center_y - frame_center_y) ** 2
+            )
 
-                score = (area1 + area2) / 2
+            if distance < min_distance:
+                min_distance = distance
+                best_idx = i
 
-                if score > best_score:
-                    best_score = score
-                    best_idx1 = frame_indices[idx1]
-                    best_idx2 = frame_indices[idx2]
+        if best_idx is None:
+            return None, None
 
-        return best_idx1, best_idx2
+        # Select first frame and frame 1 second after it
+        frame1_idx = frame_indices[best_idx]
+        frame2_idx = frame_indices[best_idx + frame_difference]
+
+        return frame1_idx, frame2_idx
 
     def _find_best_plate_frame(self,
                                plate_video_path: str,
