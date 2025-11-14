@@ -134,8 +134,10 @@ Edit `config.json` to customize behavior:
 - Decreasing size = moving away from camera
 
 ### 3. Frame Selection
-- Selects two frames with specified frame difference
-- Optimizes for largest vehicle size (best quality)
+- Selects first frame when vehicle bounding box center is closest to frame center
+- Selects second frame exactly 1 second after the first frame
+- This center-based approach ensures the vehicle is optimally positioned for visibility
+- Defaults to frames 1 and 2 if track is too short for 1-second spacing
 
 ### 4. Plate Detection
 - Based on detected direction, uses appropriate video (toward/away)
